@@ -1,0 +1,65 @@
+WITH aggregated_data AS (
+    SELECT
+        metric_name,
+        trans_dt,
+        site_name,
+        event_time,
+        local_event_time,
+        vendor,
+        fqdn,
+        group_key,
+        group_value,
+        fqdn_type,
+        primary_clli,
+        device_clli,
+        region,
+        area,
+        market,
+        latitude,
+        longitude,
+        value,
+        SUM(value) OVER (PARTITION BY metric_name, site_name, trans_dt, event_time) AS total_value
+    FROM
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+    WHERE
+        trans_dt between '2023-01-01' and '2024-12-31'
+         AND LOWER(metric_name) IN ('active_sessions','total_subscribers')
+       
+),
+ranked_smf_data AS (
+    SELECT
+        *,
+        RANK() OVER (
+            PARTITION BY metric_name, site_name, trans_dt
+            ORDER BY total_value DESC
+        ) AS rank
+    FROM
+        aggregated_data
+)
+SELECT 
+    '5g' AS technology,
+    trans_dt,
+    event_time,
+    local_event_time,
+    vendor,
+    fqdn AS device_name,
+    'smf' AS function_name,
+    metric_name,
+    value AS metric_value,
+    group_key,
+    group_value,
+    fqdn_type AS device_type,
+    primary_clli,
+    device_clli,
+    region,
+    site_name,
+    area,
+    market,
+    latitude,
+    longitude,
+    CURRENT_DATETIME() AS schedule_timestamp,
+    CURRENT_TIMESTAMP() AS updated_timestamp
+FROM
+    ranked_smf_data
+WHERE
+    rank = 1
