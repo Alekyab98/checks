@@ -1,0 +1,15 @@
+WITH source_dates AS (
+    SELECT DISTINCT trans_dt 
+    FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`  -- Source table
+    WHERE trans_dt BETWEEN '2024-12-01' AND CURRENT_DATE()  -- Partition filter
+),
+utilization_dates AS (
+    SELECT DISTINCT trans_dt 
+    FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_core_utilization_planning_tbl`
+    WHERE trans_dt BETWEEN '2024-12-01' AND CURRENT_DATE()  -- Partition filter
+)
+SELECT sd.trans_dt
+FROM source_dates sd
+LEFT JOIN utilization_dates ud
+ON sd.trans_dt = ud.trans_dt
+WHERE ud.trans_dt IS NULL;
