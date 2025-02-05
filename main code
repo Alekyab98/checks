@@ -1,0 +1,50 @@
+WITH upf_aggregated_data AS (
+SELECT
+metric_name,trans_dt,site_name,event_time,local_event_time,vendor,fqdn,group_key,group_value,fqdn_type,primary_clli,device_clli,region,area,
+market,latitude,longitude,value,
+SUM(value) OVER (PARTITION BY metric_name, site_name, trans_dt, event_time) AS total_value
+FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_middle_tbl`
+WHERE trans_dt = '2024-12-01'
+AND LOWER(metric_name) IN (lower('Aggregate_dl_throughput'),lower('Aggregate_ul_throughput'))
+),
+ranked_upf_data AS (
+SELECT
+*,RANK() OVER (PARTITION BY metric_name, site_name, trans_dt ORDER BY total_value DESC) AS rank
+FROM upf_aggregated_data
+),
+upf_count_data as( SELECT
+'5g' AS technology,trans_dt,event_time,local_event_time,vendor,fqdn AS device_name,'smf' AS function_name,metric_name,value AS metric_value,
+group_key,group_value,fqdn_type AS device_type,primary_clli,device_clli,region,site_name,area,market,latitude,longitude,
+CURRENT_DATETIME() AS schedule_timestamp,CURRENT_TIMESTAMP() AS updated_timestamp
+FROM
+ranked_upf_data
+WHERE
+rank = 1),
+ smf_aggregated_data AS (
+    SELECT metric_name, trans_dt,site_name,event_time,local_event_time,vendor,fqdn,group_key,group_value,fqdn_type,primary_clli,
+        device_clli,region,area,market,latitude,longitude,value,
+        SUM(value) OVER (PARTITION BY metric_name, site_name, trans_dt, event_time) AS total_value
+    FROM
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+    WHERE
+        trans_dt ='2024-12-01'
+         AND LOWER(metric_name) IN ('active_sessions','total_subscribers')      
+),
+ranked_smf_data AS (
+    SELECT
+        *,
+        RANK() OVER (PARTITION BY metric_name, site_name, trans_dt ORDER BY total_value DESC ) AS rank
+    FROM
+        smf_aggregated_data
+),smf_count_data as(SELECT 
+    '5g' AS technology, trans_dt,event_time,local_event_time,vendor,fqdn AS device_name,'smf' AS function_name,metric_name,value AS 
+     metric_value,group_key,group_value,fqdn_type AS device_type,  primary_clli,   device_clli,  region,site_name,
+    area, market, latitude, longitude,CURRENT_DATETIME() AS schedule_timestamp, CURRENT_TIMESTAMP() AS updated_timestamp
+FROM
+    ranked_smf_data
+WHERE
+    rank = 1)
+
+select 'upf' as funnction,count(*) from upf_count_data
+union all
+select 'smf' as funnction,count(*) from smf_count_data
