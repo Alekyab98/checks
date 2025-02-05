@@ -1,0 +1,40 @@
+SELECT DISTINCT metric_name 
+FROM `your_utilization_table`
+WHERE LOWER(metric_name) NOT IN ('aggregate_dl_throughput', 'aggregate_ul_throughput', 'active_sessions', 'total_subscribers');
+
+
+WITH all_dates AS (
+    SELECT DISTINCT trans_dt
+    FROM UNNEST(GENERATE_DATE_ARRAY('2024-12-01', CURRENT_DATE(), INTERVAL 1 DAY))
+)
+SELECT ad.trans_dt
+FROM all_dates ad
+LEFT JOIN (SELECT DISTINCT trans_dt FROM `your_utilization_table`) ut
+ON ad.trans_dt = ut.trans_dt
+WHERE ut.trans_dt IS NULL;
+
+WITH previous_day AS (
+    SELECT metric_name, site_name, trans_dt, SUM(metric_value) AS prev_day_value
+    FROM `your_utilization_table`
+    WHERE trans_dt = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+    GROUP BY metric_name, site_name, trans_dt
+),
+current_day AS (
+    SELECT metric_name, site_name, trans_dt, SUM(metric_value) AS today_value
+    FROM `your_utilization_table`
+    WHERE trans_dt = CURRENT_DATE()
+    GROUP BY metric_name, site_name, trans_dt
+)
+SELECT cd.metric_name, cd.site_name, cd.today_value, pd.prev_day_value,
+       SAFE_DIVIDE(ABS(cd.today_value - pd.prev_day_value), pd.prev_day_value) AS pct_change
+FROM current_day cd
+LEFT JOIN previous_day pd ON cd.metric_name = pd.metric_name AND cd.site_name = pd.site_name
+WHERE SAFE_DIVIDE(ABS(cd.today_value - pd.prev_day_value), pd.prev_day_value) > 2;
+
+
+
+
+SELECT metric_name, site_name, trans_dt, event_time, COUNT(*) AS duplicate_count
+FROM `your_utilization_table`
+GROUP BY metric_name, site_name, trans_dt, event_time
+HAVING COUNT(*) > 1;
