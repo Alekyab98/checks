@@ -1,0 +1,149 @@
+MERGE INTO vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt 
+USING (
+WITH null_agg AS (
+    SELECT trans_dt, event_time, fqdn, vendor, schedule_time,
+      MAX(TO_JSON_STRING(labels)) AS labels,
+      SAFE_CAST(SUM(
+          CASE
+            WHEN metric_name = 'sessions' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END) AS FLOAT64) AS sessions
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, schedule_time
+),
+not_null_agg AS (
+    SELECT trans_dt, event_time, fqdn, vendor, schedule_time,
+      TO_JSON_STRING(labels) AS labels,
+      ROUND(SAFE_CAST(SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END) AS FLOAT64), 4) AS increase_in_ipv4_bytes_by_access
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, labels, schedule_time
+),
+grafana_expression_calc AS (
+    SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+    FROM (
+        SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+        FROM null_agg
+        WHERE value IS NOT NULL
+        UNION ALL
+        SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+        FROM not_null_agg
+        WHERE value IS NOT NULL
+    )
+),
+event_timestamps AS (
+    SELECT DISTINCT event_time 
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    WHERE DATETIME_TRUNC(TIMESTAMP(schedule_time), HOUR)  
+          BETWEEN TIMESTAMP_SUB(DATETIME_TRUNC(TIMESTAMP('2025-02-08 14:35:00'), HOUR), INTERVAL 1 HOUR) 
+              AND DATETIME_TRUNC(TIMESTAMP('2025-02-08 14:35:00'), HOUR)
+      AND trans_dt = DATE(TIMESTAMP_SUB(TIMESTAMP('2025-02-08 14:35:00'), INTERVAL 1 HOUR))
+),
+fqdn_classification AS (
+    SELECT
+        trans_dt,
+        event_time,
+        fqdn,
+        vendor,
+        metric_name,
+        value,
+        CASE
+            WHEN fqdn LIKE '%RCHLTXEK%' OR fqdn LIKE '%WELKTXLB%' THEN 'lab-element'
+            WHEN fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%' OR fqdn LIKE '%ENTPP%' THEN 'primary'
+            WHEN fqdn LIKE '%EC-S%' OR fqdn LIKE '%CONSS%' OR fqdn LIKE '%ENTRS%' OR fqdn LIKE '%ENTPS%' THEN 'secondary'
+            ELSE NULL
+        END AS fqdn_type,
+        UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base, 
+
+        -- Extracts last 2-3 digits from the FQDN as the deployment number
+        SAFE_CAST(REGEXP_EXTRACT(fqdn, r'(\d{2,3})$') AS INT64) AS deployment_number,
+
+        JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_name') AS group_key,
+        JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_value') AS group_value,
+        DATETIME('2025-02-08 15:35:00') AS schedule_time,
+        CURRENT_TIMESTAMP AS updated_timestamp
+    FROM grafana_expression_calc 
+    WHERE TIMESTAMP(event_time) IN (SELECT event_time FROM event_timestamps)
+        AND TIMESTAMP(schedule_time) > (SELECT MIN(event_time) FROM event_timestamps)
+        AND trans_dt IN (SELECT DATE(event_time) FROM event_timestamps)
+        AND trans_dt IS NOT NULL
+),
+primary_fqdns AS (
+    -- Extracting primary FQDNs along with their deployment numbers
+    SELECT 
+        fqdn, 
+        UPPER(SUBSTR(fqdn, 1, 8)) AS primary_clli, 
+        SAFE_CAST(REGEXP_EXTRACT(fqdn, r'(\d{2,3})$') AS INT64) AS primary_deployment_number
+    FROM grafana_expression_calc
+    WHERE fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%' OR fqdn LIKE '%ENTPP%'
+),
+fqdn_mapped AS (
+    SELECT
+        f.trans_dt,
+        f.event_time,
+        DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+        f.fqdn,
+        f.vendor,
+        f.metric_name,
+        f.value,
+        f.group_key,
+        f.group_value,
+        f.fqdn_type, 
+        
+        -- Direct mapping for primary FQDNs
+        CASE
+            WHEN f.fqdn_type = 'primary' THEN pm.primary_clli
+            ELSE NULL
+        END AS primary_clli,
+
+        -- Mapping secondary FQDNs based on deployment number match
+        CASE
+            WHEN f.fqdn_type = 'secondary' 
+                 AND p.primary_clli = pm.primary_clli
+                 AND f.deployment_number = p.primary_deployment_number
+            THEN p.fqdn
+            ELSE NULL
+        END AS matched_primary_fqdn,
+
+        -- Assign the correct site name based on FQDN mapping
+        CASE
+            WHEN f.fqdn_type = 'primary' THEN pm.site_name
+            WHEN f.fqdn_type = 'secondary' 
+                 AND p.primary_clli = pm.primary_clli
+                 AND f.deployment_number = p.primary_deployment_number
+            THEN pm.site_name
+            ELSE NULL
+        END AS mapped_site_name,
+
+        pm.region,
+        pm.latitude,
+        pm.longitude,
+        pm.area,
+        pm.market,
+        f.schedule_time,
+        f.updated_timestamp
+    FROM fqdn_classification f
+    LEFT JOIN (
+        SELECT 
+            UPPER(site_clli) AS primary_clli, 
+            UPPER(pair) AS secondary_clli, 
+            site_name, 
+            region, 
+            latitude, 
+            longitude, 
+            area, 
+            market, 
+            timezone
+        FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+    ) pm
+    ON (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+        OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli)
+
+    LEFT JOIN primary_fqdns p 
+    ON f.fqdn_type = 'secondary' 
+        AND p.primary_clli = pm.primary_clli
+        AND f.deployment_number = p.primary_deployment_number
+)
