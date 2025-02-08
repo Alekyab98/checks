@@ -1,0 +1,222 @@
+MERGE INTO vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt 
+USING (
+WITH null_agg AS(
+    SELECT trans_dt, event_time, fqdn, vendor,schedule_time,
+      MAX( TO_JSON_STRING(labels) ) AS labels,
+      SAFE_CAST( SUM(
+          CASE
+            WHEN metric_name = 'sessions' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END
+          ) AS FLOAT64 ) AS sessions,
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+   
+    GROUP BY trans_dt, event_time, vendor, fqdn ,schedule_time
+  ),
+    not_null_agg AS(
+    SELECT trans_dt, event_time, fqdn,  vendor,schedule_time,
+      TO_JSON_STRING(labels) AS labels,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS increase_in_ipv4_bytes_by_access,
+      
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    
+    GROUP BY trans_dt, event_time, vendor, fqdn, labels ,schedule_time
+  ),
+    null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn,schedule_time, metric.metric_name AS metric_name, SUM(metric.metric_value) AS value, 
+    SAFE_CAST(NULL AS STRING) AS key_group,
+   --SAFE_CAST(NULL AS STRING) AS group_key,
+   --SAFE_CAST(NULL AS STRING) AS group_value,
+    FROM null_agg,
+      UNNEST ( [ STRUCT( 'sessions' AS metric_name,
+          null_agg.sessions AS metric_value,
+          NULL AS group_by_label ) ]) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group,schedule_time
+       ),
+    not_null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn ,schedule_time, metric.metric_name AS metric_name, SUM(metric.metric_value) AS value,
+    metric.group_by_label AS key_group 
+    FROM not_null_agg,
+      UNNEST ( [ 
+	      STRUCT( 'increase_in_ipv4_bytes_by_access' AS metric_name,not_null_agg.increase_in_ipv4_bytes_by_access AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label )
+		  ] ) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group, schedule_time
+   ),
+grafana_expression_calc as (
+SELECT *
+FROM
+(
+  SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+  FROM null_unnest
+  WHERE value IS NOT NULL
+)
+UNION ALL
+(
+  SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+  FROM not_null_unnest
+  WHERE value IS NOT NULL
+)
+),
+--'2025-02-08 15:35:00','2025-02-08 14:35:00')"
+event_timestamps as
+(
+select distinct event_time from  vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+  where DATETIME_TRUNC(timestamp(schedule_time),HOUR)  between TIMESTAMP_SUB(DATETIME_TRUNC(timestamp('2025-02-08 14:35:00'),HOUR),INTERVAL 1 HOUR) and
+  DATETIME_TRUNC(timestamp('2025-02-08 14:35:00'),HOUR)
+   and trans_dt=date(TIMESTAMP_SUB(timestamp('2025-02-08 14:35:00'),INTERVAL 1 HOUR))
+),
+fqdn_classification AS (
+  SELECT
+    trans_dt,
+    event_time,
+    fqdn,
+    vendor,
+    metric_name,
+    value,
+    CASE
+      WHEN fqdn LIKE '%RCHLTXEK%' OR fqdn LIKE '%WELKTXLB%' THEN 'lab-element'
+      WHEN fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%'or fqdn LIKE'%ENTPP%'  THEN 'primary'
+      WHEN fqdn  LIKE '%EC-S%' OR fqdn LIKE '%CONSS%' OR fqdn LIKE '%ENTRS%'or fqdn LIKE '%ENTPS%' THEN 'secondary'
+      else null
+    END AS fqdn_type,
+    UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base, 
+
+    REGEXP_EXTRACT(fqdn, r'(\d{2,3})$') as deployment_number,
+
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_name') AS group_key,
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_value') AS group_value,
+    datetime('2025-02-08 15:35:00') as schedule_time,
+    current_timestamp as updated_timestamp
+  FROM
+     grafana_expression_calc where
+       timestamp(event_time) in  (select event_time from event_timestamps)
+    and timestamp(schedule_time) > (select min(event_time) from event_timestamps)
+and trans_dt in (select date(event_time) from event_timestamps)
+and trans_dt is not null
+)
+SELECT
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.group_key,
+  f.group_value,
+  f.fqdn_type, 
+ CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary'AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli 
+    ELSE null
+  END AS primary_clli,
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary'AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli 
+    else null
+  END AS device_clli,
+  site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude,
+  pm.area,
+  pm.market,
+  f.schedule_time,
+  f.updated_timestamp
+FROM
+  fqdn_classification f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    timezone,
+    --REGEXP_EXTRACT(site_clli,r'(/d{2,3})$') as primary_deployment_number
+  FROM  vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+) pm
+ON
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli
+  --AND f.deployment_number=pm.primary_deployment_number
+  )
+  
+) src
+ON tgt.trans_dt=src.trans_dt
+and tgt.event_time=src.event_time
+and tgt.fqdn=src.fqdn
+and tgt.metric_name=src.metric_name
+and tgt.vendor=src.vendor
+and tgt.group_key=src.group_key
+and tgt.group_value=src.group_value
+and tgt.trans_dt is not null
+
+WHEN MATCHED
+THEN UPDATE SET
+tgt.local_event_time=src.local_event_time,
+tgt.value=src.value,
+tgt.fqdn_type=src.fqdn_type,
+tgt.primary_clli=src.primary_clli,
+tgt.device_clli=src.device_clli,
+tgt.site_name=src.site_name,
+tgt.region=src.region,
+tgt.latitude=src.latitude,
+tgt.longitude=src.longitude,
+tgt.area=src.area,
+tgt.market=src.market,
+tgt.schedule_time=src.schedule_time,
+tgt.updated_timestamp=src.updated_timestamp
+
+WHEN NOT MATCHED THEN
+INSERT
+( trans_dt,
+  event_time,
+  local_event_time,
+  fqdn,
+  vendor,
+  metric_name,
+  value,
+  group_key,
+  group_value,
+  fqdn_type, 
+  primary_clli,
+  device_clli,
+  site_name,
+  region,
+  latitude,
+  longitude,
+  area,
+  market,
+  schedule_time,
+  updated_timestamp
+)VALUES
+( src.trans_dt,
+  src.event_time,
+  src.local_event_time,
+  src.fqdn,
+  src.vendor,
+  src.metric_name,
+  src.value,
+  src.group_key,
+  src.group_value,
+  src.fqdn_type, 
+  src.primary_clli,
+  src.device_clli,
+  src.site_name,
+  src.region,
+  src.latitude,
+  src.longitude,
+  src.area,
+  src.market,
+  src.schedule_time,
+  src.updated_timestamp);
