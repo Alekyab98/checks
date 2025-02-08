@@ -1,0 +1,70 @@
+WITH fqdn_mapped AS (
+  SELECT 
+    f.trans_dt,
+    f.event_time,
+    DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+    f.fqdn AS secondary_fqdn,  -- Keeping only secondary FQDN
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.group_key,
+    f.group_value,
+    f.fqdn_type, 
+    pm.site_name, -- Mapping the correct site name
+    pm.region,
+    pm.latitude,
+    pm.longitude,
+    pm.area,
+    pm.market,
+    f.schedule_time,
+    f.updated_timestamp
+  FROM fqdn_classification f
+  LEFT JOIN (
+    SELECT
+      UPPER(site_clli) AS primary_clli,
+      UPPER(pair) AS secondary_clli,  -- This column is used for mapping
+      site_name,
+      region,
+      latitude,
+      longitude,
+      area,
+      market,
+      timezone
+    FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+  ) pm 
+  ON (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli)
+  
+  -- Join to match deployment number with the correct primary
+  LEFT JOIN (
+    SELECT 
+      f.fqdn AS primary_fqdn, 
+      f.clli_base AS primary_clli,
+      f.deployment_number AS primary_deployment_number
+    FROM fqdn_classification f
+    WHERE f.fqdn_type = 'primary'
+  ) p 
+  ON f.fqdn_type = 'secondary' 
+  AND p.primary_clli = pm.primary_clli
+  AND f.deployment_number = p.primary_deployment_number
+)
+-- FINAL OUTPUT: ONLY SECONDARY FQDN MAPPING
+SELECT 
+  trans_dt,
+  event_time,
+  local_event_time,
+  secondary_fqdn,
+  vendor,
+  metric_name,
+  value,
+  group_key,
+  group_value,
+  fqdn_type, 
+  site_name,
+  region,
+  latitude,
+  longitude,
+  area,
+  market,
+  schedule_time,
+  updated_timestamp
+FROM fqdn_mapped;
