@@ -1,0 +1,153 @@
+MERGE INTO vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt
+USING (
+WITH null_agg AS (
+    SELECT 
+        trans_dt, event_time, fqdn, vendor, schedule_time,
+        MAX(TO_JSON_STRING(labels)) AS labels,
+        SAFE_CAST(SUM(
+            CASE WHEN metric_name = 'sessions' 
+                 AND JSON_VALUE(labels, '$.group') = 'up-session' 
+                 THEN CAST(metric_sum_value AS FLOAT64) 
+            ELSE NULL END
+        ) AS FLOAT64) AS sessions
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, schedule_time
+),
+
+not_null_agg AS (
+    SELECT 
+        trans_dt, event_time, fqdn, vendor, schedule_time,
+        TO_JSON_STRING(labels) AS labels,
+        SAFE_CAST(SUM(
+            CASE WHEN metric_name = 'in_ipv4_bytes' 
+                 AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' 
+                 THEN CAST(metric_increase_value AS FLOAT64) 
+            ELSE NULL END
+        ) AS FLOAT64) AS increase_in_ipv4_bytes_by_access
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, labels, schedule_time
+),
+
+-- **Step 1: Flatten Data**
+null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn, schedule_time, 
+           metric.metric_name AS metric_name, SUM(metric.metric_value) AS value, 
+           NULL AS key_group
+    FROM null_agg,
+    UNNEST([STRUCT('sessions' AS metric_name, null_agg.sessions AS metric_value)]) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group, schedule_time
+),
+
+not_null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn, schedule_time, 
+           metric.metric_name AS metric_name, SUM(metric.metric_value) AS value,
+           metric.group_by_label AS key_group
+    FROM not_null_agg,
+    UNNEST([
+        STRUCT('increase_in_ipv4_bytes_by_access' AS metric_name, 
+               not_null_agg.increase_in_ipv4_bytes_by_access AS metric_value,
+               TO_JSON_STRING(STRUCT('interface-network_instance' AS group_by_key_name, 
+               CONCAT(JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance')))) 
+        ) AS group_by_label
+    ]) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group, schedule_time
+),
+
+grafana_expression_calc AS (
+    SELECT * FROM (
+        SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group 
+        FROM null_unnest
+        WHERE value IS NOT NULL
+        UNION ALL
+        SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group 
+        FROM not_null_unnest
+        WHERE value IS NOT NULL
+    )
+),
+
+-- **Step 2: Identify FQDN Type**
+fqdn_classification AS (
+    SELECT 
+        trans_dt, event_time, fqdn, vendor, metric_name, value,
+        CASE 
+            WHEN fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%' THEN 'primary'
+            WHEN fqdn LIKE '%EC-S%' OR fqdn LIKE '%CONSS%' OR fqdn LIKE '%ENTRS%' THEN 'secondary'
+            ELSE NULL 
+        END AS fqdn_type,
+        UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base,
+        SUBSTR(fqdn, LENGTH(fqdn) - 2, 3) AS deployment_number
+    FROM grafana_expression_calc
+),
+
+-- **Step 3: Map Primary FQDN for Secondary Devices**
+primary_fqdn_mapping AS (
+    SELECT DISTINCT 
+        d1.fqdn AS secondary_fqdn, 
+        d2.fqdn AS primary_fqdn
+    FROM fqdn_classification d1
+    LEFT JOIN fqdn_classification d2
+        ON d1.fqdn_type = 'secondary'
+        AND d2.fqdn_type = 'primary'
+        AND SUBSTR(d1.fqdn, 1, 8) = SUBSTR(d2.fqdn, 1, 8)
+        AND SUBSTR(d1.fqdn, -3, 3) = SUBSTR(d2.fqdn, -3, 3)
+),
+
+-- **Step 4: Get Site Information**
+site_mapping AS (
+    SELECT 
+        UPPER(site_clli) AS primary_clli,
+        UPPER(pair) AS secondary_clli,
+        site_name, region, latitude, longitude, area, market, timezone
+    FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+)
+
+-- **Step 5: Final Data Selection**
+SELECT 
+    f.trans_dt,
+    f.event_time,
+    DATETIME(TIMESTAMP(f.event_time), sm.timezone) AS local_event_time,
+    f.fqdn,
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.fqdn_type, 
+    COALESCE(pf.primary_fqdn, f.fqdn) AS primary_fqdn,
+    sm.site_name,
+    sm.region,
+    sm.latitude,
+    sm.longitude,
+    sm.area,
+    sm.market,
+    f.schedule_time,
+    CURRENT_TIMESTAMP() AS updated_timestamp
+FROM fqdn_classification f
+LEFT JOIN primary_fqdn_mapping pf 
+    ON f.fqdn = pf.secondary_fqdn
+LEFT JOIN site_mapping sm 
+    ON LOWER(SUBSTR(f.fqdn, 1, 8)) = LOWER(sm.primary_clli)
+) src
+ON tgt.trans_dt = src.trans_dt
+AND tgt.event_time = src.event_time
+AND tgt.fqdn = src.fqdn
+AND tgt.metric_name = src.metric_name
+AND tgt.vendor = src.vendor
+
+-- **Step 6: Merge Operation**
+WHEN MATCHED THEN
+UPDATE SET
+    tgt.local_event_time = src.local_event_time,
+    tgt.value = src.value,
+    tgt.fqdn_type = src.fqdn_type,
+    tgt.primary_fqdn = src.primary_fqdn,
+    tgt.site_name = src.site_name,
+    tgt.region = src.region,
+    tgt.latitude = src.latitude,
+    tgt.longitude = src.longitude,
+    tgt.area = src.area,
+    tgt.market = src.market,
+    tgt.schedule_time = src.schedule_time,
+    tgt.updated_timestamp = src.updated_timestamp
+
+WHEN NOT MATCHED THEN
+INSERT (trans_dt, event_time, local_event_time, fqdn, vendor, metric_name, value, f.fqdn_type, primary_fqdn, site_name, region, latitude, longitude, area, market, schedule_time, updated_timestamp)
+VALUES (src.trans_dt, src.event_time, src.local_event_time, src.fqdn, src.vendor, src.metric_name, src.value, src.fqdn_type, src.primary_fqdn, src.site_name, src.region, src.latitude, src.longitude, src.area, src.market, src.schedule_time, src.updated_timestamp);
