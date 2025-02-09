@@ -1,0 +1,158 @@
+MERGE INTO vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt 
+USING (
+WITH fqdn_classification AS (
+  SELECT
+    trans_dt,
+    event_time,
+    fqdn,
+    vendor,
+    metric_name,
+    value,
+    CASE
+      WHEN fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%' OR fqdn LIKE '%ENTPP%' THEN fqdn
+      ELSE NULL
+    END AS primary_fqdn,
+    CASE
+      WHEN fqdn LIKE '%EC-S%' OR fqdn LIKE '%CONSS%' OR fqdn LIKE '%ENTRS%' OR fqdn LIKE '%ENTPS%' THEN fqdn
+      ELSE NULL
+    END AS secondary_fqdn,
+    UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base, 
+    SUBSTR(fqdn, -3, 3) AS deployment_number
+  FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+),
+site_mapping AS (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,  
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    timezone
+  FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+),
+primary_fqdns AS (
+  -- Extracting only primary FQDNs for mapping
+  SELECT 
+    fqdn AS primary_fqdn, 
+    clli_base AS primary_clli,
+    SUBSTR(fqdn, -3, 3) AS deployment_number
+  FROM fqdn_classification
+  WHERE primary_fqdn IS NOT NULL
+),
+mapped_fqdns AS (
+  SELECT 
+    f.trans_dt,
+    f.event_time,
+    DATETIME(TIMESTAMP(f.event_time), sm.timezone) AS local_event_time,
+    f.fqdn,
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.fqdn_type, 
+    sm.site_name, 
+    sm.region,
+    sm.latitude,
+    sm.longitude,
+    sm.area,
+    sm.market,
+    f.schedule_time,
+    CURRENT_TIMESTAMP() AS updated_timestamp,
+    
+    -- Deriving Primary FQDN for Secondary FQDNs using substring logic
+    CASE 
+      WHEN f.primary_fqdn IS NOT NULL THEN f.primary_fqdn
+      ELSE p.primary_fqdn
+    END AS primary_fqdn
+
+  FROM fqdn_classification f
+  LEFT JOIN site_mapping sm 
+    ON LOWER(SUBSTR(f.fqdn, 1, 8)) = LOWER(COALESCE(sm.primary_clli, sm.secondary_clli))
+
+  LEFT JOIN primary_fqdns p 
+    ON f.secondary_fqdn IS NOT NULL
+    AND LOWER(SUBSTR(f.secondary_fqdn, 1, 8)) = LOWER(sm.pair)
+    AND SUBSTR(f.secondary_fqdn, -3, 3) = SUBSTR(p.primary_fqdn, -3, 3)
+)
+SELECT 
+  trans_dt,
+  event_time,
+  local_event_time,
+  fqdn,
+  primary_fqdn,  
+  vendor,
+  metric_name,
+  value,
+  fqdn_type, 
+  site_name,
+  region,
+  latitude,
+  longitude,
+  area,
+  market,
+  schedule_time,
+  updated_timestamp
+FROM mapped_fqdns
+) src
+ON tgt.trans_dt = src.trans_dt
+AND tgt.event_time = src.event_time
+AND tgt.fqdn = src.fqdn
+AND tgt.metric_name = src.metric_name
+AND tgt.vendor = src.vendor
+AND tgt.trans_dt IS NOT NULL
+
+WHEN MATCHED THEN
+UPDATE SET
+  tgt.local_event_time = src.local_event_time,
+  tgt.value = src.value,
+  tgt.fqdn_type = src.fqdn_type,
+  tgt.primary_fqdn = src.primary_fqdn,
+  tgt.site_name = src.site_name,
+  tgt.region = src.region,
+  tgt.latitude = src.latitude,
+  tgt.longitude = src.longitude,
+  tgt.area = src.area,
+  tgt.market = src.market,
+  tgt.schedule_time = src.schedule_time,
+  tgt.updated_timestamp = src.updated_timestamp
+
+WHEN NOT MATCHED THEN
+INSERT (
+  trans_dt,
+  event_time,
+  local_event_time,
+  fqdn,
+  primary_fqdn,  
+  vendor,
+  metric_name,
+  value,
+  fqdn_type, 
+  site_name,
+  region,
+  latitude,
+  longitude,
+  area,
+  market,
+  schedule_time,
+  updated_timestamp
+) VALUES (
+  src.trans_dt,
+  src.event_time,
+  src.local_event_time,
+  src.fqdn,
+  src.primary_fqdn,  
+  src.vendor,
+  src.metric_name,
+  src.value,
+  src.fqdn_type, 
+  src.site_name,
+  src.region,
+  src.latitude,
+  src.longitude,
+  src.area,
+  src.market,
+  src.schedule_time,
+  src.updated_timestamp
+);
