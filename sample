@@ -1,0 +1,10 @@
+site_clli	site_name	region	latitude	longitude	pair	timezone	area	market	trans_dt
+MILNHI04	Mililani	Pacific	21.480695	-158.017896	HLBOOR38	Pacific/Honolulu	WEST	Pacific Northwest	2025-02-07
+RDMEWA22	Redmond Ridge	Pacific	47.691881	-122.032708	HLBOOR38	America/Los_Angeles	WEST	Pacific Northwest	2025-02-07
+ANCSAK08	Anchorage	Pacific	61.184477	-149.873687	HLBOOR38	America/Anchorage	WEST	Pacific Northwest	2025-02-07
+HLBOOR38	Hillsboro	Pacific	45.545085	-122.88169	RDMEWA22	America/Los_Angeles	WEST	Pacific Northwest	2025-02-07
+AZUSCA21	Azusa	Pacific	34.13839	-117.91613	VISTCA65	America/Los_Angeles	WEST	Southern California	2025-02-07
+VISTCA65	Vista	Pacific	33.15033611	-117.2307389	AZUSCA21	America/Los_Angeles	WEST	Southern California	2025-02-07
+SNVACANX	Sunnyvale	Pacific	37.38855	-122.0367	RCKLCAIG	America/Los_Angeles	WEST	Northern California/Nevada	2025-02-07
+RCKLCAIG	Rocklin	Pacific	38.823327	-121.306264	SNVACANX	America/Los_Angeles	WEST	Northern California/Nevada	2025-02-07
+NLVGNVOQ	Las Vegas	Desert Mountain Plains	36.221653	-115.146806	TEMQAZKW	America/Los_Angeles	WEST	Southwest	2025-02-07
