@@ -1,0 +1,78 @@
+WITH site_mapping AS (
+  SELECT 
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli
+  FROM `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+),
+fqdn_primary_mapping AS (
+  SELECT 
+    f.fqdn,
+    f.fqdn_type,
+    f.vendor,
+    f.trans_dt,
+    f.event_time,
+    f.metric_name,
+    f.value,
+    f.group_key,
+    f.group_value,
+    f.schedule_time,
+    f.updated_timestamp,
+    f.clli_base,
+    CASE 
+      WHEN f.fqdn_type = 'primary' THEN f.fqdn  
+      WHEN f.fqdn_type = 'secondary' THEN p_fqdn.fqdn
+      ELSE NULL 
+    END AS primary_fqdn
+  FROM fqdn_classification f
+  LEFT JOIN site_mapping sm 
+    ON LOWER(f.clli_base) = LOWER(sm.secondary_clli) -- Match secondary site_clli to find its primary
+  LEFT JOIN `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_tgt_dataset_name}.${aether_5g_core_module_tgt_smf_tblname}` p_fqdn
+    ON LOWER(SUBSTR(p_fqdn.fqdn, 1, 8)) = LOWER(sm.primary_clli) -- Find primary FQDN based on primary site_clli
+)
+SELECT 
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.group_key,
+  f.group_value,
+  f.fqdn_type, 
+  f.primary_fqdn,  -- Fixed logic for primary_fqdn
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli 
+    ELSE NULL
+  END AS primary_clli,
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli 
+    ELSE NULL
+  END AS device_clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude,
+  pm.area,
+  pm.market,
+  f.schedule_time,
+  f.updated_timestamp
+FROM fqdn_primary_mapping f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    timezone
+  FROM  `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+) pm
+ON
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli);
