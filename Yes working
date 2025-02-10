@@ -1,0 +1,78 @@
+WITH fqdn_classification AS (
+  SELECT
+    f.trans_dt,
+    f.event_time,
+    f.fqdn,
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.group_key,
+    f.group_value,
+    f.schedule_time,
+    CASE
+      WHEN f.fqdn LIKE '%RCHLTXEK%' OR f.fqdn LIKE '%WELKTXLB%' THEN 'lab-element'
+      WHEN f.fqdn LIKE '%EC-P%' OR f.fqdn LIKE '%CONSP%' OR f.fqdn LIKE '%ENTRP%' OR f.fqdn LIKE '%ENTPP%' THEN 'primary'
+      WHEN f.fqdn LIKE '%EC-S%' OR f.fqdn LIKE '%CONSS%' OR f.fqdn LIKE '%ENTRS%' OR f.fqdn LIKE '%ENTPS%' THEN 'secondary'
+      ELSE NULL
+    END AS fqdn_type,
+    UPPER(SUBSTR(f.fqdn, 1, 8)) AS clli_base,
+    SUBSTR(f.fqdn, LENGTH(f.fqdn) - 2, 3) AS deployment_number,
+    JSON_EXTRACT_SCALAR(f.group_key, '$.group_by_key_name') AS group_key,
+    JSON_EXTRACT_SCALAR(f.group_value, '$.group_by_key_value') AS group_value,
+    DATETIME('2025-02-08 15:35:00') AS schedule_time,
+    CURRENT_TIMESTAMP() AS updated_timestamp
+  FROM grafana_expression_calc f
+  WHERE TIMESTAMP(f.event_time) IN (SELECT event_time FROM event_timestamps)
+    AND TIMESTAMP(f.schedule_time) > (SELECT MIN(event_time) FROM event_timestamps)
+    AND f.trans_dt IN (SELECT DATE(event_time) FROM event_timestamps)
+    AND f.trans_dt IS NOT NULL
+),
+
+fqdn_mapping_cte AS (
+  SELECT
+    fc.*,
+    -- **Deriving Primary CLLI**
+    CASE 
+      WHEN fc.fqdn_type = 'primary' THEN fc.clli_base 
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '01' THEN 'RDMEWA22'
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '02' THEN 'RDMEWA22'
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '11' THEN 'MILNHI04'
+      WHEN fc.fqdn_type = 'secondary' THEN pm.primary_clli
+      ELSE NULL
+    END AS primary_clli,
+
+    -- **Deriving Device CLLI**
+    CASE 
+      WHEN fc.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+      WHEN fc.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli 
+      ELSE NULL
+    END AS device_clli
+
+  FROM fqdn_classification fc
+  LEFT JOIN (
+    SELECT 
+      UPPER(site_clli) AS primary_clli, 
+      UPPER(pair) AS secondary_clli 
+    FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+  ) pm
+  ON (fc.fqdn_type = 'primary' AND fc.clli_base = pm.primary_clli)
+  OR (fc.fqdn_type = 'secondary' AND fc.clli_base = pm.secondary_clli)
+),
+
+fqdn_final_cte AS (
+  SELECT
+    fmc.*,
+    sc.site_name,
+    sc.region,
+    sc.latitude,
+    sc.longitude,
+    sc.area,
+    sc.market
+  FROM fqdn_mapping_cte fmc
+  LEFT JOIN vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls sc
+    ON fmc.primary_clli = sc.site_clli  -- **FIXED JOIN CONDITION**
+)
+
+SELECT * FROM fqdn_final_cte
+WHERE fqdn = 'HLBOOR38VZWvUPF-Y-EC-CONSS-11'
+GROUP BY ALL;
