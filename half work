@@ -1,0 +1,1061 @@
+MERGE INTO  vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt 
+USING (
+WITH null_agg AS(
+    SELECT trans_dt, event_time, fqdn, vendor,schedule_time,
+      MAX( TO_JSON_STRING(labels) ) AS labels,
+      SAFE_CAST( SUM(
+          CASE
+            WHEN metric_name = 'sessions' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END
+          ) AS FLOAT64 ) AS sessions,
+      SAFE_CAST( SUM(
+          CASE
+            WHEN metric_name = 'sessions_ipv4' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END
+          ) AS FLOAT64 ) AS IPv4_session,
+      SAFE_CAST( SUM(
+          CASE
+            WHEN metric_name = 'sessions_ipv4v6' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END
+          ) AS FLOAT64 ) AS IPv4v6_session,
+      SAFE_CAST( SUM(
+          CASE
+            WHEN metric_name = 'sessions_ipv6' AND JSON_VALUE(labels, '$.group')= 'up-session' THEN CAST(metric_sum_value AS FLOAT64)
+            ELSE NULL
+        END
+          ) AS FLOAT64 ) AS IPv6_session,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS In_IPv4_Bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS out_ipv4_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS In_IPv6_Bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv6_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS out_ipv6_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS in_IPv4_Pkts_Drop,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS Out_IPv4_Pkts_Drop,
+      ROUND( SAFE_CAST( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS In_IPv4_Drop_rate,
+      ROUND( SAFE_CAST( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'out_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'out_ipv4_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS Out_IPv4_Drop_rate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS In_IPv6_Pkts_Drop,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS Out_IPv6_Pkts_Drop,
+      ROUND( SAFE_CAST ( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS In_IPv6_Drop_Rate,
+      ROUND( SAFE_CAST ( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'out_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'out_ipv6_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS Out_IPv6_Drop_Rate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_Pkts_Drop,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_gate_closed' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_gate_closed,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_buffer_full' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_buffer_full,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_fwd_action' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_fwd_action,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_quota_holding_time' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_quota_holding_t,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_quota' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_quota,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_pkt_rate' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_pkt_rate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_bitrate' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_pkt_bitrate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_invalid_destination' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_invalid_dst,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_fragment_failed' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_fragment_failed,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_need_fragment' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_need_fragment,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_no_pdr' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_no_pdr,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_pkts_drop_buffer_flush' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv4_drop_buffer_flush,
+      ROUND( SAFE_CAST ( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS IPv4_percent_of_Total_as_Drop,
+      ROUND( SAFE_CAST( ( 8 * SUM (
+              CASE
+                WHEN metric_name = 'dl_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'dl_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS Throughput,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_pkts_drop,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_gate_closed' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_gate_closed,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_buffer_full' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_buffer_full,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_fwd_action' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_fwd_action,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_quota_holding_time' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_quota_holding_t,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_quota' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_quota,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_pkt_rate' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_pkt_rate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_bitrate' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_pkt_bitrate,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_invalid_destination' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_invalid_dst,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_fragment_failed' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ipv6_drop_fragment_failed,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_no_pdr' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_no_pdr,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_pkts_drop_buffer_flush' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS IPv6_drop_buffer_flush,
+      ROUND( SAFE_CAST( SAFE_DIVIDE ( SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_pkts_drop' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ), SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_pkts' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) )* 100 AS FLOAT64 ), 4 ) AS IPv6_percent_of_Total_as_Drop,
+      ROUND( SAFE_CAST( ( 8 * SUM (
+              CASE
+                WHEN metric_name = 'dl_ipv6_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' AND JSON_VALUE(labels, '$.apn') = 'vzwinternet' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'dl_ipv4_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' AND JSON_VALUE(labels, '$.apn') = 'vzwinternet' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS dl_sent_bytes_vzwinternet,
+      ROUND( SAFE_CAST( ( 8 * SUM (
+              CASE
+                WHEN metric_name = 'dl_ipv6_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' AND JSON_VALUE(labels, '$.apn') = 'v5ga01internet' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'dl_ipv4_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' AND JSON_VALUE(labels, '$.apn') = 'v5ga01internet' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS dl_sent_bytes_v5ga01internet,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'association_setup_req_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_association_Request_Received,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'association_setup_rsp_acc_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_association_Response_Accept_Sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'association_setup_rsp_rej_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_association_Response_Reject_Sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_establishment_req_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_establishment_req_rcvd,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_establishment_rsp_acc_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_establishment_rsp_acc_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_establishment_rsp_rej_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_establishment_rsp_rej_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_modification_req_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_modification_req_rcvd,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_modification_rsp_acc_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_modification_rsp_acc_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_modification_rsp_rej_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_modification_rsp_rej_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_report_req_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_report_req_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_report_rsp_rej_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_report_rsp_rej_rcvd,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'session_report_rsp_acc_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_session_report_rsp_acc_rcvd,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'heartbeat_req_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_heartbeat_req_rcvd,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'heartbeat_req_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_heartbeat_req_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'heartbeat_rsp_rcvd' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_heartbeat_rsp_rcvd,
+            round(SAFE_CAST(SUM(
+    CASE
+        WHEN metric_name = 'ul_noresources_nat_drop_bytes' 
+             AND JSON_VALUE(labels, '$.group') = 'up-nat' 
+        THEN CAST(metric_increase_value AS FLOAT64)
+        ELSE NULL
+    END
+) AS FLOAT64),4)AS nat_uplink_drop_no_resources,
+
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'heartbeat_rsp_sent' AND JSON_VALUE(labels, '$.group') = 'up-pfcp-procedure' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS total_heartbeat_rsp_sent,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'sessions' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS NAT_Sessions,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'active_flows' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS active_flows,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'dl_nat_in_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS dl_nat_in_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'dl_nat_out_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS dl_nat_out_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ul_nat_in_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ul_nat_in_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ul_nat_out_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ul_nat_out_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'drop_pkts_sessions' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS sessions_with_dropped_pkts,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'dl_unknownprotocol_nat_drop_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS dl_unknownprotocol_nat_drop_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ul_unknownprotocol_nat_drop_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ul_unknownprotocol_nat_drop_bytes,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ul_noresources_nat_drop_bytes' AND JSON_VALUE(labels, '$.group') = 'up-nat' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ul_noresources_nat_drop_bytes,
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+   
+    GROUP BY trans_dt, event_time, vendor, fqdn ,schedule_time
+  ),
+    not_null_agg AS(
+    SELECT trans_dt, event_time, fqdn,  vendor,schedule_time,
+      TO_JSON_STRING(labels) AS labels,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS increase_in_ipv4_bytes_by_access,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv4_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS increase_out_ipv4_bytes_by_access,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'in_ipv6_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS increase_in_ipv6_bytes_by_access,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'out_ipv6_bytes' AND JSON_VALUE(labels, '$.group')= 'up-payload-ip-ni-if' THEN CAST(metric_increase_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS increase_out_ipv6_bytes_by_access,
+            ROUND( SAFE_CAST( ( 8 * SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'out_ipv4_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              )+ 8 * SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              )+ 8 * SUM(
+              CASE
+                WHEN metric_name = 'out_ipv6_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS in_out_throughput,
+			  		  
+			  
+			  ROUND( SAFE_CAST( ( 8 * SUM(
+              CASE
+                WHEN metric_name = 'in_ipv4_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'in_ipv6_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS in_throughput,
+
+
+
+			  ROUND( SAFE_CAST( ( 8 * SUM(
+              CASE
+                WHEN metric_name = 'out_ipv4_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'out_ipv6_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS out_throughput,
+            
+      ROUND( SAFE_CAST( ( 8 * SUM (
+              CASE
+                WHEN metric_name = 'dl_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'dl_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS Aggregate_dl_throughput,
+      ROUND( SAFE_CAST( ( 8 * SUM(
+              CASE
+                WHEN metric_name = 'ul_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'ul_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS Aggregate_ul_throughput,
+
+              	 ROUND( SAFE_CAST( ( 8 * SUM (
+              CASE
+                WHEN metric_name = 'dl_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'dl_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'ul_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) + 8 * SUM(
+              CASE
+                WHEN metric_name = 'ul_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+                ELSE NULL
+            END
+              ) ) AS FLOAT64 ), 4 ) AS Aggregate_ul_dl_throughput,
+      -- ROUND( SAFE_CAST( ( 8 * SUM (
+      --         CASE
+      --           WHEN metric_name = 'dl_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) + 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'dl_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) ) AS FLOAT64 ), 4 ) AS Aggregate_dl_throughput_overtime,
+      -- ROUND( SAFE_CAST( ( 8 * SUM (
+      --         CASE
+      --           WHEN metric_name = 'ul_ipv6_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) + 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'ul_ipv4_sent_bytes' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) ) AS FLOAT64 ), 4 ) AS Aggregate_ul_throughput_overtime,
+      -- ROUND( SAFE_CAST( ( 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'dl_ipv6_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) + 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'dl_ipv4_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) ) AS FLOAT64 ), 4 ) AS Aggregate_dl_throughput_per_apn,
+      -- ROUND( SAFE_CAST( ( 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'ul_ipv6_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) + 8 * SUM(
+      --         CASE
+      --           WHEN metric_name = 'ul_ipv4_sent_bytes' AND JSON_VALUE(labels, '$.group') = 'up-payload-apn-slice' THEN CAST(metric_rate_value AS FLOAT64)
+      --           ELSE NULL
+      --       END
+      --         ) ) AS FLOAT64 ), 4 ) AS Aggregate_ul_throughput_per_apn,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'sessions' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS nat_pool_sessions,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ext_ip_used' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ext_ip_used,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'sessions_medium_exhausted_chunks' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS sessions_medium_exhausted_chunks,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ext_ip_medium_exhausted_chunks' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ext_ip_medium_exhausted_chunks,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'sessions_high_exhausted_chunks' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS sessions_High_exhausted_chunks,
+      ROUND( SAFE_CAST( SUM(
+            CASE
+              WHEN metric_name = 'ext_ip_high_exhausted_chunks' AND JSON_VALUE(labels, '$.group') = 'up-nat-pool' THEN CAST(metric_sum_value AS FLOAT64)
+              ELSE NULL
+          END
+            ) AS FLOAT64 ), 4 ) AS ext_ip_High_exhausted_chunks
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    
+    GROUP BY trans_dt, event_time, vendor, fqdn, labels ,schedule_time
+  ),
+    null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn,schedule_time, metric.metric_name AS metric_name, SUM(metric.metric_value) AS value, 
+    SAFE_CAST(NULL AS STRING) AS key_group,
+   --SAFE_CAST(NULL AS STRING) AS group_key,
+   --SAFE_CAST(NULL AS STRING) AS group_value,
+    FROM null_agg,
+      UNNEST ( [ STRUCT( 'sessions' AS metric_name,
+          null_agg.sessions AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_Session' AS metric_name,
+          null_agg.IPv4_Session AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_Session' AS metric_name,
+          null_agg.IPv6_Session AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4v6_Session' AS metric_name,
+          null_agg.IPv4v6_Session AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'In_IPv4_Bytes' AS metric_name,
+          null_agg.In_IPv4_Bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'out_IPv4_Bytes' AS metric_name,
+          null_agg.out_IPv4_Bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'In_IPv6_Bytes' AS metric_name,
+          null_agg.In_IPv6_Bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'out_IPv6_Bytes' AS metric_name,
+          null_agg.out_IPv6_Bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'in_ipv4_pkts_drop' AS metric_name,
+          null_agg.In_IPv4_pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'out_ipv4_pkts_drop' AS metric_name,
+          null_agg.Out_IPv4_pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'In_IPv4_Drop_rate' AS metric_name,
+          null_agg.In_IPv4_Drop_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'Out_IPv4_Drop_rate' AS metric_name,
+          null_agg.Out_IPv4_Drop_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'in_ipv6_pkts_drop' AS metric_name,
+          null_agg.In_IPv6_pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'out_ipv6_pkts_drop' AS metric_name,
+          null_agg.Out_IPv6_pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'In_IPv6_Drop_rate' AS metric_name,
+          null_agg.In_IPv6_Drop_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'Out_IPv6_Drop_Rate' AS metric_name,
+          null_agg.out_IPv6_Drop_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_pkts_Drop' AS metric_name,
+          null_agg.IPv4_pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_gate_closed' AS metric_name,
+          null_agg.IPv4_drop_gate_closed AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_buffer_full' AS metric_name,
+          null_agg.IPv4_drop_buffer_full AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_fwd_action' AS metric_name,
+          null_agg.IPv4_drop_fwd_action AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_quota_holding_t' AS metric_name,
+          null_agg.IPv4_drop_quota_holding_t AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_quota' AS metric_name,
+          null_agg.IPv4_drop_quota AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_pkt_rate' AS metric_name,
+          null_agg.IPv4_drop_pkt_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_pkt_bitrate' AS metric_name,
+          null_agg.IPv4_drop_pkt_bitrate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_invalid_dst' AS metric_name,
+          null_agg.IPv4_drop_invalid_dst AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_fragment_failed' AS metric_name,
+          null_agg.IPv4_drop_fragment_failed AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_need_fragment' AS metric_name,
+          null_agg.IPv4_drop_need_fragment AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_no_pdr' AS metric_name,
+          null_agg.IPv4_drop_no_pdr AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_drop_buffer_flush' AS metric_name,
+          null_agg.IPv4_drop_buffer_flush AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv4_percent_of_Total_as_Drop' AS metric_name,
+          null_agg.IPv4_percent_of_Total_as_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'Throughput' AS metric_name,
+          null_agg.Throughput AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_Pkts_Drop' AS metric_name,
+          null_agg.IPv6_Pkts_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_gate_closed' AS metric_name,
+          null_agg.IPv6_drop_gate_closed AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_buffer_full' AS metric_name,
+          null_agg.IPv6_drop_buffer_full AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_fwd_action' AS metric_name,
+          null_agg.IPv6_drop_fwd_action AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_quota_holding_t' AS metric_name,
+          null_agg.IPv6_drop_quota_holding_t AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_quota' AS metric_name,
+          null_agg.IPv6_drop_quota AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_pkt_rate' AS metric_name,
+          null_agg.IPv6_drop_pkt_rate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_pkt_bitrate' AS metric_name,
+          null_agg.IPv6_drop_pkt_bitrate AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_invalid_dst' AS metric_name,
+          null_agg.IPv6_drop_invalid_dst AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'ipv6_drop_fragment_failed' AS metric_name,
+          null_agg.IPv6_drop_fragment_failed AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_no_pdr' AS metric_name,
+          null_agg.IPv6_drop_no_pdr AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_drop_buffer_flush' AS metric_name,
+          null_agg.IPv6_drop_buffer_flush AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'IPv6_percent_of_Total_as_Drop' AS metric_name,
+          null_agg.IPv6_percent_of_Total_as_Drop AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'dl_sent_bytes_vzwinternet' AS metric_name,
+          null_agg.dl_sent_bytes_vzwinternet AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'dl_sent_bytes_v5ga01internet' AS metric_name,
+          null_agg.dl_sent_bytes_v5ga01internet AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_association_Request_Received' AS metric_name,
+          null_agg.total_association_Request_Received AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_association_Response_Accept_Sent' AS metric_name,
+          null_agg.total_association_Response_Accept_Sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_association_Response_Reject_Sent' AS metric_name,
+          null_agg.total_association_Response_Reject_Sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_establishment_req_rcvd' AS metric_name,
+          null_agg.total_session_establishment_req_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_establishment_rsp_acc_sent' AS metric_name,
+          null_agg.total_session_establishment_rsp_acc_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_establishment_rsp_rej_sent' AS metric_name,
+          null_agg.total_session_establishment_rsp_rej_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_modification_req_rcvd' AS metric_name,
+          null_agg.total_session_modification_req_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_modification_rsp_acc_sent' AS metric_name,
+          null_agg.total_session_modification_rsp_acc_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_modification_rsp_rej_sent' AS metric_name,
+          null_agg.total_session_modification_rsp_rej_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_report_req_sent' AS metric_name,
+          null_agg.total_session_report_req_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_report_rsp_rej_rcvd' AS metric_name,
+          null_agg.total_session_report_rsp_rej_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_session_report_rsp_acc_rcvd' AS metric_name,
+          null_agg.total_session_report_rsp_acc_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_heartbeat_req_rcvd' AS metric_name,
+          null_agg.total_heartbeat_req_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_heartbeat_req_sent' AS metric_name,
+          null_agg.total_heartbeat_req_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_heartbeat_rsp_rcvd' AS metric_name,
+          null_agg.total_heartbeat_rsp_rcvd AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'total_heartbeat_rsp_sent' AS metric_name,
+          null_agg.total_heartbeat_rsp_sent AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'NAT_Sessions' AS metric_name,
+          null_agg.NAT_Sessions AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'active_flows' AS metric_name,
+          null_agg.active_flows AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'dl_nat_in_bytes' AS metric_name,
+          null_agg.dl_nat_in_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'dl_nat_out_bytes' AS metric_name,
+          null_agg.dl_nat_out_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'ul_nat_in_bytes' AS metric_name,
+          null_agg.ul_nat_in_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'ul_nat_out_bytes' AS metric_name,
+          null_agg.ul_nat_out_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'sessions_with_dropped_pkts' AS metric_name,
+          null_agg.sessions_with_dropped_pkts AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'dl_unknownprotocol_nat_drop_bytes' AS metric_name,
+          null_agg.dl_unknownprotocol_nat_drop_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'ul_unknownprotocol_nat_drop_bytes' AS metric_name,
+          null_agg.ul_unknownprotocol_nat_drop_bytes AS metric_value,
+          NULL AS group_by_label ), STRUCT( 'ul_noresources_nat_drop_bytes' AS metric_name,
+          null_agg.nat_uplink_drop_no_resources AS metric_value,
+          NULL AS group_by_label ) ]) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group,schedule_time
+       ),
+    not_null_unnest AS (
+    SELECT trans_dt, event_time, vendor, fqdn ,schedule_time, metric.metric_name AS metric_name, SUM(metric.metric_value) AS value,
+    metric.group_by_label AS key_group 
+   
+    FROM not_null_agg,
+      UNNEST ( [ 
+	      STRUCT( 'increase_in_ipv4_bytes_by_access' AS metric_name,not_null_agg.increase_in_ipv4_bytes_by_access AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'increase_out_ipv4_bytes_by_access' AS metric_name,not_null_agg.increase_out_ipv4_bytes_by_access AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'increase_in_ipv6_bytes_by_access' AS metric_name,not_null_agg.increase_in_ipv6_bytes_by_access AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'increase_out_ipv6_bytes_by_access' AS metric_name,not_null_agg.increase_out_ipv6_bytes_by_access AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+      
+
+STRUCT( 'in_out_throughput' AS metric_name,not_null_agg.in_out_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'in_out_throughput' AS metric_name,not_null_agg.in_out_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'in_out_throughput' AS metric_name,not_null_agg.in_out_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'interface-network_instance' AS group_by_key_name,CONCAT( JSON_VALUE(labels, '$.interface'), '-', JSON_VALUE(labels, '$.network_instance') ) AS group_by_key_value ) ) AS group_by_label ), 
+
+		  STRUCT( 'aggregate_dl_throughput' AS metric_name,not_null_agg.aggregate_dl_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'apn' AS group_by_key_name,JSON_VALUE(labels, '$.apn') AS group_by_key_value ) ) AS group_by_label ), 
+		  
+		  STRUCT( 'aggregate_ul_throughput' AS metric_name,not_null_agg.aggregate_ul_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'apn' AS group_by_key_name,JSON_VALUE(labels, '$.apn') AS group_by_key_value ) ) AS group_by_label ),
+		  
+      STRUCT( 'aggregate_ul_dl_throughput' AS metric_name,not_null_agg.aggregate_ul_dl_throughput AS metric_value,
+          TO_JSON_STRING( STRUCT( 'apn' AS group_by_key_name,JSON_VALUE(labels, '$.apn') AS group_by_key_value ) ) AS group_by_label ) 
+		  
+		  ] ) AS metric
+    GROUP BY trans_dt, event_time, vendor, fqdn, metric_name, key_group, schedule_time
+   ),
+grafana_expression_calc as (
+SELECT *
+FROM
+(
+  SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+  FROM null_unnest
+  WHERE value IS NOT NULL
+)
+UNION ALL
+(
+  SELECT trans_dt, event_time, vendor, fqdn, schedule_time, metric_name, value, key_group
+  FROM not_null_unnest
+  WHERE value IS NOT NULL
+)
+),
+event_timestamps as
+(
+select distinct event_time from  vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+  where DATETIME_TRUNC(timestamp(schedule_time),HOUR)  between TIMESTAMP_SUB(DATETIME_TRUNC(timestamp('2025-02-08 14:35:00'),HOUR),INTERVAL 1 HOUR) and
+  DATETIME_TRUNC(timestamp('2025-02-08 14:35:00'),HOUR)
+   and trans_dt=date(TIMESTAMP_SUB(timestamp('2025-02-08 14:35:00'),INTERVAL 1 HOUR))
+),
+fqdn_classification AS (
+  SELECT
+    trans_dt,
+    event_time,
+    fqdn,
+    vendor,
+    metric_name,
+    value,
+    CASE
+      WHEN fqdn LIKE '%RCHLTXEK%' OR fqdn LIKE '%WELKTXLB%' THEN 'lab-element'
+      WHEN fqdn LIKE '%EC-P%' OR fqdn LIKE '%CONSP%' OR fqdn LIKE '%ENTRP%'or fqdn LIKE'%ENTPP%'  THEN 'primary'
+      WHEN fqdn  LIKE '%EC-S%' OR fqdn LIKE '%CONSS%' OR fqdn LIKE '%ENTRS%'or fqdn LIKE '%ENTPS%' THEN 'secondary'
+      else null
+    END AS fqdn_type,
+    UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base, 
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_name') AS group_key,
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_value') AS group_value,
+    datetime('2025-02-08 15:35:00') as schedule_time,
+    current_timestamp as updated_timestamp
+  FROM
+     grafana_expression_calc where
+       timestamp(event_time) in  (select event_time from event_timestamps)
+    and timestamp(schedule_time) > (select min(event_time) from event_timestamps)
+and trans_dt in (select date(event_time) from event_timestamps)
+and trans_dt is not null
+),
+fqdn_mapping AS (
+  SELECT
+    fc.*,
+    CASE 
+      WHEN fc.fqdn_type = 'primary' THEN fc.clli_base 
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '01' THEN 'RDMEWA22'
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '02' THEN 'RDMEWA22'
+      WHEN fc.fqdn_type = 'secondary' AND fc.fqdn LIKE '%HLBOOR38%' AND SUBSTR(fc.fqdn, -2, 2) = '11' THEN 'MILNHI04'
+      WHEN fc.fqdn_type = 'secondary' THEN pm.primary_clli
+      ELSE NULL
+    END AS primary_clli,  
+    CASE 
+      WHEN fc.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+      WHEN fc.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli 
+      ELSE NULL
+    END AS device_clli
+
+  FROM fqdn_classification fc
+  LEFT JOIN (
+    SELECT 
+      UPPER(site_clli) AS primary_clli, 
+      UPPER(pair) AS secondary_clli 
+    FROM vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls
+  ) pm
+  ON (fc.fqdn_type = 'primary' AND fc.clli_base = pm.primary_clli)
+  OR (fc.fqdn_type = 'secondary' AND fc.clli_base = pm.secondary_clli)
+)
+  SELECT
+  fm.trans_dt,
+  fm.event_time,
+  DATETIME(TIMESTAMP(fm.event_time), sc.timezone) AS local_event_time,
+  fm.fqdn,
+  fm.vendor,
+  fm.metric_name,
+  fm.value,
+  fm.group_key,
+  fm.group_value,
+  fm.fqdn_type, 
+  fm.primary_clli,
+  fm.device_clli,
+  sc.site_name,
+  sc.region,
+  sc.latitude,
+  sc.longitude,
+  sc.area,
+  sc.market,
+  fm.schedule_time,
+  fm.updated_timestamp
+  FROM fqdn_mapping fm
+  LEFT JOIN vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls sc
+    ON fm.primary_clli = sc.site_clli 
+  
+) src
+ON tgt.trans_dt=src.trans_dt
+and tgt.event_time=src.event_time
+and tgt.fqdn=src.fqdn
+and tgt.metric_name=src.metric_name
+and tgt.vendor=src.vendor
+and tgt.group_key=src.group_key
+and tgt.group_value=src.group_value
+and tgt.trans_dt is not null
+
+WHEN MATCHED
+THEN UPDATE SET
+tgt.local_event_time=src.local_event_time,
+tgt.value=src.value,
+tgt.fqdn_type=src.fqdn_type,
+tgt.primary_clli=src.primary_clli,
+tgt.device_clli=src.device_clli,
+tgt.site_name=src.site_name,
+tgt.region=src.region,
+tgt.latitude=src.latitude,
+tgt.longitude=src.longitude,
+tgt.area=src.area,
+tgt.market=src.market,
+tgt.schedule_time=src.schedule_time,
+tgt.updated_timestamp=src.updated_timestamp
+
+WHEN NOT MATCHED THEN
+INSERT
+( trans_dt,
+  event_time,
+  local_event_time,
+  fqdn,
+  vendor,
+  metric_name,
+  value,
+  group_key,
+  group_value,
+  fqdn_type, 
+  primary_clli,
+  device_clli,
+  site_name,
+  region,
+  latitude,
+  longitude,
+  area,
+  market,
+  schedule_time,
+  updated_timestamp
+)VALUES
+( src.trans_dt,
+  src.event_time,
+  src.local_event_time,
+  src.fqdn,
+  src.vendor,
+  src.metric_name,
+  src.value,
+  src.group_key,
+  src.group_value,
+  src.fqdn_type, 
+  src.primary_clli,
+  src.device_clli,
+  src.site_name,
+  src.region,
+  src.latitude,
+  src.longitude,
+  src.area,
+  src.market,
+  src.schedule_time,
+  src.updated_timestamp);
