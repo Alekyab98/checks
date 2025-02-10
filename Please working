@@ -1,0 +1,92 @@
+WITH fqdn_classification AS (
+  SELECT
+    trans_dt,
+    event_time,
+    fqdn,
+    vendor,
+    metric_name,
+    value,
+    fqdn_type,
+    -- Extract deployment number and base FQDN
+    REGEXP_EXTRACT(fqdn, r'(\d{2})$') AS deployment_number, -- Extracts "01", "02", or other deployment numbers
+    UPPER(SUBSTR(fqdn, 1, LENGTH(fqdn) - 3)) AS fqdn_base,  -- Base part of FQDN, removing deployment number
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_name') AS group_key,
+    JSON_EXTRACT_SCALAR(key_group, '$.group_by_key_value') AS group_value,
+    datetime(process_ts) as schedule_time,
+    current_timestamp as updated_timestamp
+  FROM grafana_expression_calc
+  WHERE timestamp(event_time) in (SELECT event_time FROM event_timestamps)
+    AND timestamp(schedule_time) > (SELECT min(event_time) FROM event_timestamps)
+    AND trans_dt IN (SELECT date(event_time) FROM event_timestamps)
+),
+fqdn_with_primary_fqdn AS (
+  SELECT
+    f.trans_dt,
+    f.event_time,
+    f.fqdn,
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.fqdn_type,
+    f.deployment_number,
+    f.fqdn_base,
+    f.group_key,
+    f.group_value,
+    f.schedule_time,
+    f.updated_timestamp,
+    CASE
+      WHEN f.fqdn_type = 'primary' THEN f.fqdn  -- If it's a primary FQDN, just return it as is
+      WHEN f.fqdn_type = 'secondary' THEN
+        -- For secondary FQDN, fetch the corresponding primary FQDN from the site mapping table
+        (SELECT site_clli
+         FROM `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+         WHERE pair = f.fqdn)  -- Match the secondary fqdn with the pair in the site config table
+      ELSE NULL
+    END AS primary_fqdn  -- Add logic for Primary FQDN
+  FROM fqdn_classification f
+)
+SELECT
+  src.trans_dt,
+  src.event_time,
+  DATETIME(TIMESTAMP(src.event_time), pm.timezone) AS local_event_time,
+  src.fqdn,
+  src.vendor,
+  src.metric_name,
+  src.value,
+  src.group_key,
+  src.group_value,
+  src.fqdn_type,
+  src.primary_fqdn,  -- Include the Primary FQDN
+  CASE
+    WHEN src.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli
+    WHEN src.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli
+    ELSE NULL
+  END AS primary_clli,
+  CASE
+    WHEN src.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli
+    WHEN src.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli
+    ELSE NULL
+  END AS device_clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude,
+  pm.area,
+  pm.market,
+  src.schedule_time,
+  src.updated_timestamp
+FROM fqdn_with_primary_fqdn src
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    timezone
+  FROM `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+) pm
+ON (src.primary_fqdn = pm.primary_clli OR src.primary_fqdn = pm.secondary_clli)
