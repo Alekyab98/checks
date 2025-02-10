@@ -1,0 +1,199 @@
+MERGE INTO vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_derived_tbls tgt
+USING (
+WITH null_agg AS (
+    SELECT 
+        trans_dt, event_time, fqdn, vendor, schedule_time,
+        MAX(TO_JSON_STRING(labels)) AS labels,
+        SAFE_CAST(SUM(
+            CASE WHEN metric_name = 'sessions' 
+                 AND JSON_VALUE(labels, '$.group') = 'up-session' 
+                 THEN CAST(metric_sum_value AS FLOAT64) 
+            ELSE NULL END
+        ) AS FLOAT64) AS sessions
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, schedule_time
+),
+
+not_null_agg AS (
+    SELECT 
+        trans_dt, event_time, fqdn, vendor, schedule_time,
+        TO_JSON_STRING(labels) AS labels,
+        SAFE_CAST(SUM(
+            CASE WHEN metric_name = 'in_ipv4_bytes' 
+                 AND JSON_VALUE(labels, '$.group') = 'up-payload-ip-ni-if' 
+                 THEN CAST(metric_increase_value AS FLOAT64) 
+            ELSE NULL END
+        ) AS FLOAT64) AS increase_in_ipv4_bytes_by_access
+    FROM vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_upf_performance
+    GROUP BY trans_dt, event_time, vendor, fqdn, labels, schedule_time
+),
+
+fqdn_classification AS (
+    SELECT
+        trans_dt,
+        event_time,
+        fqdn,
+        vendor,
+        metric_name,
+        value,
+        CASE 
+            WHEN fqdn LIKE '%ec-p%' OR fqdn LIKE '%consp%' OR fqdn LIKE '%entrp%' THEN 'primary'
+            WHEN fqdn LIKE '%ec-s%' OR fqdn LIKE '%conss%' OR fqdn LIKE '%entrs%' THEN 'secondary'
+            ELSE NULL
+        END AS fqdn_type,
+        UPPER(SUBSTR(fqdn, 1, 8)) AS clli_base,
+        SUBSTR(fqdn, LENGTH(fqdn) - 2, 3) AS deployment_number
+    FROM (
+        SELECT * FROM null_agg WHERE value IS NOT NULL
+        UNION ALL
+        SELECT * FROM not_null_agg WHERE value IS NOT NULL
+    )
+),
+
+fqdn_data AS (
+    SELECT DISTINCT
+        f.fqdn,
+        f.fqdn_type,
+        CASE 
+            WHEN f.fqdn_type = 'primary' THEN f.fqdn
+            ELSE NULL
+        END AS primary_fqdn,
+        CASE 
+            WHEN f.fqdn_type = 'secondary' THEN f.fqdn
+        END AS secondary_fqdn,
+        sm.site_name,
+        sm.region,
+        sm.longitude,
+        sm.latitude,
+        sm.timezone,
+        sm.pair
+    FROM fqdn_classification f
+    LEFT JOIN vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_site_configuration_tbls sm
+        ON LOWER(SUBSTR(f.fqdn, 1, 8)) = LOWER(COALESCE(sm.site_clli, sm.pair))
+),
+
+final_data AS (
+    SELECT DISTINCT
+        d1.primary_fqdn,
+        d2.secondary_fqdn,
+        d1.site_name,
+        d1.region,
+        d1.longitude,
+        d1.latitude,
+        d1.timezone
+    FROM fqdn_data d1
+    LEFT JOIN fqdn_data d2
+        ON LOWER(SUBSTR(d2.secondary_fqdn, 1, 8)) = LOWER(d1.pair)
+        AND SUBSTR(d2.secondary_fqdn, -9, 3) = SUBSTR(d1.primary_fqdn, -9, 3)
+        AND SUBSTR(d2.secondary_fqdn, -3, 3) = SUBSTR(d1.primary_fqdn, -3, 3)
+    WHERE d1.primary_fqdn IS NOT NULL
+),
+
+primary_fqdn_mapping AS (
+    SELECT 
+        smf.*,
+        COALESCE(
+            (SELECT primary_fqdn FROM final_data WHERE final_data.secondary_fqdn = smf.fqdn),
+            smf.fqdn
+        ) AS primary_fqdn
+    FROM fqdn_data smf
+)
+
+SELECT
+    f.trans_dt,
+    f.event_time,
+    DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+    f.fqdn,
+    f.vendor,
+    f.metric_name,
+    f.value,
+    f.fqdn_type, 
+    pm.primary_fqdn,
+    CASE
+        WHEN f.fqdn_type = 'primary' THEN pm.primary_clli 
+        WHEN f.fqdn_type = 'secondary' THEN pm.primary_clli 
+        ELSE NULL
+    END AS primary_clli,
+    CASE
+        WHEN f.fqdn_type = 'primary' THEN pm.primary_clli 
+        WHEN f.fqdn_type = 'secondary' THEN pm.secondary_clli 
+        ELSE NULL
+    END AS device_clli,
+    pm.site_name,
+    pm.region,
+    pm.latitude,
+    pm.longitude,
+    pm.area,
+    pm.market,
+    f.schedule_time,
+    f.updated_timestamp
+FROM fqdn_classification f
+LEFT JOIN primary_fqdn_mapping pm
+    ON LOWER(SUBSTR(f.fqdn, 1, 8)) = LOWER(COALESCE(pm.primary_fqdn, pm.fqdn))
+) src
+ON tgt.trans_dt = src.trans_dt
+AND tgt.event_time = src.event_time
+AND tgt.fqdn = src.fqdn
+AND tgt.metric_name = src.metric_name
+AND tgt.vendor = src.vendor
+AND tgt.trans_dt IS NOT NULL
+
+WHEN MATCHED THEN
+UPDATE SET
+    tgt.local_event_time = src.local_event_time,
+    tgt.value = src.value,
+    tgt.fqdn_type = src.fqdn_type,
+    tgt.primary_fqdn = src.primary_fqdn,
+    tgt.primary_clli = src.primary_clli,
+    tgt.device_clli = src.device_clli,
+    tgt.site_name = src.site_name,
+    tgt.region = src.region,
+    tgt.latitude = src.latitude,
+    tgt.longitude = src.longitude,
+    tgt.area = src.area,
+    tgt.market = src.market,
+    tgt.schedule_time = src.schedule_time,
+    tgt.updated_timestamp = src.updated_timestamp
+
+WHEN NOT MATCHED THEN
+INSERT (
+    trans_dt,
+    event_time,
+    local_event_time,
+    fqdn,
+    vendor,
+    metric_name,
+    value,
+    fqdn_type, 
+    primary_fqdn,
+    primary_clli,
+    device_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    schedule_time,
+    updated_timestamp
+) VALUES (
+    src.trans_dt,
+    src.event_time,
+    src.local_event_time,
+    src.fqdn,
+    src.vendor,
+    src.metric_name,
+    src.value,
+    src.fqdn_type, 
+    src.primary_fqdn,
+    src.primary_clli,
+    src.device_clli,
+    src.site_name,
+    src.region,
+    src.latitude,
+    src.longitude,
+    src.area,
+    src.market,
+    src.schedule_time,
+    src.updated_timestamp
+);
