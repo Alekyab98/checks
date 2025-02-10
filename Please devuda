@@ -1,0 +1,61 @@
+SELECT
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.group_key,
+  f.group_value,
+  f.fqdn_type, 
+  CASE 
+    WHEN f.fqdn_type = 'primary' THEN f.fqdn  -- If it's a primary FQDN, just return it as is
+    WHEN f.fqdn_type = 'secondary' THEN (
+      SELECT fqdn 
+      FROM `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_tgt_dataset_name}.${aether_5g_core_module_tgt_smf_tblname}`
+      WHERE LOWER(SUBSTR(fqdn, 1, 8)) = LOWER((
+        SELECT pair 
+        FROM `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+        WHERE LOWER(site_clli) = LOWER(SUBSTR(f.fqdn, 1, 8))
+      ))
+      LIMIT 1
+    )
+    ELSE NULL
+  END AS primary_fqdn,
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli 
+    ELSE NULL
+  END AS primary_clli,
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.secondary_clli 
+    ELSE NULL
+  END AS device_clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude,
+  pm.area,
+  pm.market,
+  f.schedule_time,
+  f.updated_timestamp
+FROM
+  fqdn_classification f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    area,
+    market,
+    timezone
+  FROM  `${aether_5g_core_module_tgt_project_id}.${aether_5g_core_module_site_config_dataset_name}.${aether_5g_core_module_aether_site_confg_tblname}`
+) pm
+ON
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli);
