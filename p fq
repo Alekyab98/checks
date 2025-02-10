@@ -1,0 +1,46 @@
+ fqdn_data AS (
+    -- FQDN mapping logic
+    SELECT DISTINCT
+      CASE 
+      WHEN fqdn LIKE '%ec-p%' OR fqdn LIKE '%consp%' OR fqdn LIKE '%entrp%' THEN fqdn
+      ELSE NULL
+    END AS primary_fqdn,
+      CASE 
+        WHEN fqdn LIKE '%ec-s%' OR fqdn LIKE '%conss%' OR fqdn LIKE '%entrs%' THEN fqdn
+      END AS secondary_fqdn,
+      b.site_name,
+      b.region,
+      b.longitude,
+      b.latitude,
+      b.Timezone,
+      b.`Pair`
+    FROM `vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls_v.aether_smf_performance` a
+    LEFT JOIN `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping` b
+      ON LOWER(SUBSTR(a.fqdn, 1, 8)) = LOWER(COALESCE(b.site_clli, b.`Pair`))
+    WHERE a.trans_dt = '2024-12-20'
+  ),
+  final_data AS (
+    -- Map primary and secondary FQDNs correctly
+    SELECT DISTINCT
+      d1.primary_fqdn,
+      d2.secondary_fqdn,
+      d1.site_name,
+      d1.region,
+      d1.longitude,
+      d1.latitude,
+      d1.Timezone
+    FROM fqdn_data d1
+    LEFT JOIN fqdn_data d2
+      ON LOWER(SUBSTR(d2.secondary_fqdn, 1, 8)) = LOWER(d1.`Pair`)
+         AND SUBSTR(d2.secondary_fqdn, -9, 3) = SUBSTR(d1.primary_fqdn, -9, 3)
+         AND SUBSTR(d2.secondary_fqdn, -3, 3) = SUBSTR(d1.primary_fqdn, -3, 3)
+    WHERE d1.primary_fqdn IS NOT NULL
+  ),
+  primary_fqdn_mapping AS (
+    -- Map the primary FQDN to the correct secondary FQDN
+    SELECT 
+      smf.*,
+      COALESCE(
+        (SELECT primary_fqdn FROM final_data WHERE final_data.secondary_fqdn = smf.fqdn),
+        smf.fqdn
+      ) AS primary_fqdn
